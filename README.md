@@ -17,7 +17,7 @@
     
 # Jenkins Master Configuration Matrix Setup
 
-          ![image](https://user-images.githubusercontent.com/115188099/194410692-6deafed7-2908-4e97-b694-2abc480472f3.png)
+          ![image](https://user-images.githubusercontent.com/115188099/194411336-02890d20-a032-48d9-ae64-d8551c7e26c5.png)
           
 # Jenkins Master Configuration Files Setup
 
