@@ -1,4 +1,4 @@
-# Reindex-Check
+# Reindex-Check -- Always test in non-production first. 
 
 # Update Groovy logic to have your sql server name and jira database name
 
