@@ -1,0 +1,83 @@
+#!/usr/bin/env groovy
+	println 'Starting'
+@GrabResolver(name='internal', root='http://repo.release.cerner.corp/internal/repo/')
+@GrabConfig(systemClassLoader = true) 
+@Grab(group='com.microsoft.sqlserver.jdbc', module='sqljdbc4', version='2.0')
+@Grab(group='com.github.groovy-wslite', module='groovy-wslite', version='0.6.0')
+	
+import groovy.json.*
+import groovy.sql.Sql
+import wslite.http.auth.HTTPBasicAuthorization
+import wslite.rest.RESTClient
+import wslite.rest.RESTClientException
+import com.microsoft.sqlserver.jdbc.SQLServerDriver
+import wslite.rest.*
+import hudson.model.*
+  
+node = System.getenv("node")
+
+String url = "https://${node}/rest/api/2/index/summary"
+println "URL=$url"
+
+String ipServicePassword
+
+//UPDATE SQLSERVER SERVER AND JIRADB------------------------------------------------
+String sqlServer = 'revtoolsdev'
+String jiraDB = 'jiradb'
+//UPDATE SECTION ABOVE--------------------------------------------------------------
+
+File webTeamConfig = new File('/home/jenkins', 'web-team-config.properties')
+FileInputStream fileInputStream = new FileInputStream(webTeamConfig)
+Properties properties = new Properties()
+properties.load(fileInputStream)
+
+final String sqlUsername = properties.getProperty('rqmdb-username')
+final String sqlPassword = properties.getProperty('rqmdb-password')
+
+Sql sql = Sql.newInstance("jdbc:sqlserver://$sqlServer:1433;DatabaseName="+jiraDB, sqlUsername, sqlPassword, 'com.microsoft.sqlserver.jdbc.SQLServerDriver')
+
+int getDBCount(sql) {
+	def rows = sql.rows('''select count(*) as count from dbo.jiraissue A where (ARCHIVED != 'Y' or ARCHIVED is null) and not exists
+(select distinct entity_id from propertyentry B where entity_name = 'Project' and property_key = 'jira.archiving.projects' and A.PROJECT = B.ENTITY_ID) ''')
+	rows[0].count
+}
+
+int getIndexCount(url) {
+  File webTeamConfig = new File('/home/jenkins', 'web-team-config.properties')
+
+if (!webTeamConfig.exists()) {
+    String message = "${webTeamConfig.name} does not exist in (${webTeamConfig.parent})"
+    throw new Exception(message)
+}
+ 	FileInputStream fileInputStream = new FileInputStream(webTeamConfig)
+	Properties properties = new Properties()
+	properties.load(fileInputStream)
+	final String jiraTCUsername = properties.getProperty('jira-reindexer-username')
+	final String jiraTCPassword = properties.getProperty('jira-reindexer-password')
+	String jiraBaseURL = "https://${node}"
+	RESTClient client = new RESTClient(jiraBaseURL)
+	client.authorization = new HTTPBasicAuthorization(jiraTCUsername, jiraTCPassword)
+	//def client = new RESTClient(url)
+	client.httpClient.sslTrustAllCerts = true
+	def response = client.get(path:'/rest/api/2/index/summary')
+	assert 200 == response.statusCode
+	response.json.issueIndex.countInIndex
+}
+
+//try 5 times
+boolean countsMatch = (1..10).find {
+	println "Trying $it"
+	if (it != 1) {
+		println "sleep for a min"
+		sleep(10000)
+	}
+	int dbCount = getDBCount(sql)
+	println "DB=$dbCount"
+
+	int indexCount = getIndexCount(url)
+	println "Index=$indexCount"
+
+	return indexCount == dbCount
+}
+
+assert countsMatch
